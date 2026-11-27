@@ -3,8 +3,8 @@
 A relay passes messages between the apps in a *room*: one *host*, and any number of
 *guests*. A guest's message goes to the host, and the host's go to one guest or to all of
 them. The relay does not read what the messages say; the apps encrypt them end to end. So the
-protocol is the same whatever the apps do with it: a live document today, a folder kept in
-step tomorrow. In both, the host answers questions.
+protocol is the same whatever the apps do with it: a live document, or a folder kept in step
+between your devices. In both, the host answers questions.
 
 This file is for anyone who writes another relay, or another app that uses one. The relay in
 this folder (`src/core.js`) is the reference.
@@ -148,24 +148,83 @@ guest hears that the host is there (`welcome` with `host:true`, or `host` with `
 sends every question still waiting for an answer again, under new numbers. An answer to an old
 number is let go. Each question the session asks is safe to answer twice.
 
-## Next: a folder kept in step through the relay
+## Your other devices: a folder kept in step through the relay
 
-Not built yet. The protocol needs nothing new for it; this is the plan for the apps.
+What the Selfscribe app sends when it keeps a folder the same on two of your devices
+(`apps/editor/src/features/sync/devices/` in the Selfscribe repository). The relay needs
+nothing new for it. The same messages travel on the local network, as the body of a
+`POST /device/v1` to the other device's own listener; the relay is the way when they are apart.
 
-- **Pairing.** On the computer that holds the folder, "Sync through your relay" makes a token
-  (kept in the system's keychain, so the room is the same for months) and a key. Another of
-  your devices is linked with a QR code, as Selfscribe already links a sync location: it gets
-  the relay, the room and the key, never the token.
-- **The questions.** The same request and answer as a live session, with the four operations
-  of a sync location (`Place` in the Selfscribe repository's
-  `engine/crates/selfscribe-sync/src/place.rs`): `list` (every
-  file: path, size, hash, time), `read` (one file's bytes), `write` (a whole file, with the hash
-  it is expected to replace) and `remove`. The syncing device uses them as one more kind of
-  sync location, so the sync engine, its merging and its "both copies kept" are unchanged. Big
-  files go in parts.
-- **Both online.** The folder's computer answers while it is on. A device that syncs while it
-  is off gets the relay's `no-host`, and the sync is tried again later, as for a server that
-  cannot be reached. A relay that holds encrypted changes for a device that is away would be a
-  mailbox, which this relay is not.
-- **Taking a device away.** Make a new token and key: the old room is gone, and the devices
-  still wanted are linked again.
+**The link.** Linking two devices makes one secret, 32 random bytes, carried by the QR code
+(encrypted with the short code a person reads off the screen). Everything else comes from it
+with HKDF-SHA-256 (no salt unless said):
+
+| What | HKDF info | Size |
+|---|---|---|
+| The link's id | `selfscribe-device/1 id` | 12 bytes |
+| The hello key (AES-256-GCM) | `selfscribe-device/1 hello` | 32 bytes |
+| A device's room token | `selfscribe-device/1 room DEVICE` (its id) | 32 bytes, base64url |
+| A session's question key | `selfscribe-device/1 ask ASKER`, salt: the two nonces | 32 bytes |
+| A session's answer key | `selfscribe-device/1 answer ASKER`, salt: the two nonces | 32 bytes |
+
+**Rooms.** Each device hosts a room of its own while the app is open: the room of its token
+(`room = base64url(SHA-256("selfscribe-relay/1 room " + token)[0..16])`, as above). Both
+devices can work out both tokens; nobody else can. To ask the other device, a device joins its
+room as a guest. It keeps that guest line open, so the relay's `welcome` and `host` say when
+the other device comes online.
+
+**A message.** Binary, at most the relay's `limits.message` or in its parts (above):
+
+| Bytes | What |
+|---|---|
+| 0 | `1`: a whole message |
+| 1 | The kind: `H` hello, `W` welcome, `J` join, `K` joined, `Q` question, `A` answer, `X` refused |
+| 2–13 | The link's id |
+| 14–17 | A number the asker chose (big-endian), to match the answer to its question |
+| H W J K: 18–29, then the rest | A random IV, then AES-GCM with the hello key; additional data: bytes 0–17 |
+| Q A: 18–29, 30–37, then the rest | The session's id, the question's number (u64), then AES-GCM with the session's key for that way; the IV is 4 zero bytes and the question's number; additional data: bytes 0–37 |
+| X: 18 | Why: 1 no such session, 2 not a link of this device, 3 busy |
+
+What is sealed is `[u32 length][a header as JSON][bytes]`.
+
+**A session.** The asker sends `H` with `{from, to, nonce, name, addresses, port, relay}`: its
+id, the other's, 16 fresh random bytes, and where it can be reached. The other answers `W`
+with its own nonce, `echo` (the asker's), `sid` (12 random bytes) and where it can be reached.
+The two session keys come from both nonces, so a message recorded in one session opens in no
+other; a hello played again gets a welcome to a session nobody but the link's devices has keys
+for. Each question number is answered once, and one more than 1024 behind the highest is not
+answered at all. A device that has forgotten a session (its app restarted) answers `X` 1, and
+the asker says hello again.
+
+**Joining.** The device that shows the QR code answers `J` for the link being made, and only
+while its code is on screen: on its network, and in its room on the relay, which is already the
+link's room (the token comes from the same secret and device). The joining device sends `J` (as
+a hello, with the name of its folder); the other keeps the link and answers `K` with `ok`.
+
+**The questions** (`op` in the header). One device of a link syncs it: the one that joined. It
+runs the sync engine with the other device as its place
+(`engine/crates/selfscribe-sync/src/bridge.rs`), so the engine, its merging and its "both
+copies kept" are the same as for any sync location, and the link has one record of what both
+had when they last agreed.
+
+| Question | Answer |
+|---|---|
+| `begin` `{run}` | `{ok}`; `{ok:false, error:"busy"}` while another run holds the link (a run holds it two minutes past its last question) |
+| `list` `{run}` | `{ok, entries: [[path, size, tag], …]}` |
+| `read` `{run, path, at}` | `{ok, size, hash, at}` and up to 512 KiB of the file from `at`; the pieces after the first are of the same version, and the whole is checked against `hash` (SHA-256) |
+| `write` `{run, path, at, size, hash}` and a piece | `{ok, entry}` with the last piece: the whole is checked, written beside the file and moved over it |
+| `remove` `{run, path}` | `{ok}`: the file went to the folder's trash |
+| `end` `{run, result}` | `{ok}`: the run is over; `result` is how it went, as the syncing device saw it |
+| `sync` `{allowMany}` | `{ok, run}`: asked of the device that syncs, by the other one; its `end` comes later |
+
+A failure is `{ok:false, error, message}`, `error` one of `not-found`, `auth`, `offline`,
+`busy`, `other`. Only paths inside the linked folder are answered, never its trash or the
+app's own record, and files up to 256 MiB.
+
+**Both online.** A device answers while its app is open. A device that cannot reach the other
+on its last addresses (for 1.2 seconds) nor in its room on the relay says so, and tries again
+later. A relay that held encrypted changes for a device that is away would be a mailbox, which
+this relay is not.
+
+**Taking a device away.** Unlink it on both devices: the secret is forgotten, and its rooms
+with it.
