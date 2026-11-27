@@ -1,0 +1,35 @@
+{
+  "name": "selfscribe-relay",
+  "version": "1.0.0",
+  "description": "A small server that passes end-to-end-encrypted messages between Selfscribe apps: on Cloudflare Workers or on a server of your own.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SelfScribeDev/relay.git"
+  },
+  "homepage": "https://github.com/SelfScribeDev/relay#readme",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "src/node.js",
+  "bin": {
+    "selfscribe-relay": "src/node.js"
+  },
+  "files": [
+    "src",
+    "deploy",
+    "Dockerfile",
+    "wrangler.toml",
+    "README.md",
+    "PROTOCOL.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node src/node.js",
+    "test": "node --test",
+    "deploy": "npx wrangler deploy",
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

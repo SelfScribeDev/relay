@@ -1,0 +1,6 @@
+# The relay behind Caddy, which gets and renews its https certificate by itself and passes
+# WebSockets through as they are. Put your relay's name in place of relay.example.com: its
+# DNS must point at this server, and ports 80 and 443 must be open.
+relay.example.com {
+	reverse_proxy 127.0.0.1:8787
+}

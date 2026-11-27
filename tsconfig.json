@@ -1,0 +1,21 @@
+{
+  // Type-checks the relay (`npx tsc -p tsconfig.json`): the JavaScript of the Node server and
+  // the shared core through their JSDoc, and the Worker. Nothing is compiled: Node runs the
+  // JavaScript as it is, and wrangler bundles the Worker.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "test", "test-support", "types"]
+}

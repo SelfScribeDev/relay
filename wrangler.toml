@@ -1,0 +1,38 @@
+# The Selfscribe relay on Cloudflare Workers. From this folder:
+#
+#   npx wrangler login
+#   npx wrangler deploy
+#
+# Works on the free plan: the rooms are SQLite-backed Durable Objects (the kind the free plan
+# has), with hibernatable WebSockets, so a quiet room costs nothing. wrangler prints the
+# address (https://selfscribe-relay.YOUR-NAME.workers.dev): put it in Selfscribe under
+# Settings › Sync › Relay.
+name = "selfscribe-relay"
+main = "src/worker.ts"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# Your own address instead of workers.dev: the domain must be on this Cloudflare account.
+# routes = [{ pattern = "relay.example.com", custom_domain = true }]
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[vars]
+# A message is kept to 1 MiB here (the app splits bigger ones); 32 guests in a room; a
+# connection silent for 10 minutes is closed (the app says "ping" twice a minute).
+RELAY_MAX_MESSAGE = "1048576"
+RELAY_MAX_GUESTS = "32"
+RELAY_IDLE_SECONDS = "600"
+
+# Optional: a limit on new connections per address across all rooms, with Cloudflare's Rate
+# Limiting binding. Without it each room keeps its own (60 a minute per address).
+# [[ratelimits]]
+# name = "CONNECT_LIMIT"
+# namespace_id = "1001"
+# simple = { limit = 60, period = 60 }

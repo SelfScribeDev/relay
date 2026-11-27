@@ -1,0 +1,41 @@
+# The Selfscribe relay as a systemd service, behind Caddy on the same server.
+#   cp deploy/selfscribe-relay.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now selfscribe-relay
+[Unit]
+Description=Selfscribe relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=selfscribe-relay
+Group=selfscribe-relay
+WorkingDirectory=/opt/selfscribe-relay
+ExecStart=/usr/bin/node /opt/selfscribe-relay/src/node.js
+# Only Caddy talks to it, on this server; the client's address comes from X-Forwarded-For.
+Environment=PORT=8787
+Environment=HOST=127.0.0.1
+Environment=TRUST_PROXY=1
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+
+# It needs the network and nothing else: no files to write, no devices, no privileges.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
